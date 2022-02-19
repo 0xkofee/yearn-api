@@ -11,6 +11,7 @@ export const makeVaultsTokensCacheKey = (chainId) => `vaults.tokens.${chainId}`;
 export const VaultsTokensCacheTime = ms("10 minutes");
 
 const makeVaultsAllCacheKey = (chainId) => `vaults.all.${chainId}`;
+const makeVaultsAllPlusExperimentalCacheKey = (chainId) => `vaults.all.experimental.${chainId}`;
 const VaultsAllCacheTime = ms("10 minutes");
 
 /**
@@ -84,13 +85,18 @@ export default async function (api) {
 
   api.get("/all", { schema }, async (request, reply) => {
     const chainId = request.params.chainId;
-
     let [hit, allVaults, ttl] = await api.helpers.cachedCall(
       () =>
-        fetch(`${process.env.API_MIGRATION_URL}/v1/chains/${chainId}/vaults/all`).then((res) =>
-          res.json()
-        ),
-      makeVaultsAllCacheKey(chainId),
+        Promise.all(
+          [
+            fetch(`${process.env.API_MIGRATION_URL}/v1/chains/${chainId}/vaults/all`).then((res) => res.json()),
+            ...(request.query.includeExperimental === 'true' ? [fetch(`${process.env.API_MIGRATION_URL}/v1/chains/${chainId}/vaults/experimental`).then((res) => res.json())] : [])
+          ]
+        ).then(data => {
+          return data.length == 2 ? data[0].concat(data[1]) : data[0]
+        })
+      ,
+      request.query.includeExperimental === 'true' ? makeVaultsAllPlusExperimentalCacheKey(chainId) : makeVaultsAllCacheKey(chainId),
       VaultsAllCacheTime
     );
 
